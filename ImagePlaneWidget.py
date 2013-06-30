@@ -12,8 +12,8 @@ VTK_LINEAR_RESLICE  = 1
 VTK_CUBIC_RESLICE   = 2
 
 class DV3D_GuiInterface:
-    def __init__( self, **args ): 
-        pass 
+    def __init__( self, roi, **args ): 
+        self.roi = roi 
     
     def ProcessIPWAction(self, widget, event, **args ):
         action = widget.State
@@ -27,17 +27,35 @@ class DV3D_GuiInterface:
                 image_value = cursor_data[3] 
                 cpos = cursor_data[0:3]     
                 dataValue = image_value
-                wpos = cpos
-                textDisplay = " Position: (%s, %s, %s), Value: %.3G" % ( wpos[0], wpos[1], wpos[2], dataValue )
+                wpos = self.getWorldCoords(cpos)
+                textDisplay = " LatLon Position: (%s, %s), Value: %.3G" % ( wpos[0], wpos[1], dataValue )
                 sliceIndex = widget.GetSliceIndex() 
                 print textDisplay                
                
             if action == ImagePlaneWidget.Pushing: 
                 sliceIndex = widget.GetSliceIndex() 
-                textDisplay = " Slice Index = %d ." % ( sliceIndex )
-                print textDisplay   
+                level = self.getLevel( sliceIndex )
+                textDisplay = " Level = %.2f ." % ( level )
+                print textDisplay  
+                
+    def getWorldCoords( self, cpos ):
+        wpos = [ 0, 0 ]
+        for i in range(2):
+            i2 = 2*i
+            wpos[i] = self.roi[i2] + ( cpos[i]-self.extent[i2]) * (self.roi[i2+1]-self.roi[i2]) / (self.extent[i2+1]-self.extent[i2])
+        return wpos
+
+    def getLevel( self, cpos ):
+        wpos = [ 0, 0, 0 ]
+        i = 2
+        i2 = 2*i
+        wpos = self.roi[i2] + ( cpos-self.extent[i2]) * (self.roi[i2+1]-self.roi[i2]) / (self.extent[i2+1]-self.extent[i2])
+        return wpos
     
     def getImageData( self, origin, extent, spacing ):
+        self.origin = origin
+        self.extent = extent
+        self.spacing = spacing
         image_data = vtk.vtkImageData() 
         image_data.SetScalarTypeToFloat()
         image_data.SetOrigin( origin[0], origin[1], origin[2] )
@@ -1439,7 +1457,8 @@ if __name__ == '__main__':
         picker  = vtk.vtkCellPicker()
         ren = vtk.vtkRenderer()
         picker.SetTolerance(0.005) 
-        handler = DV3D_GuiInterface()
+        roi = [ -30, 80, 0, 90, 1000, 100 ]
+        handler = DV3D_GuiInterface( roi )
         planeWidgetZ = ImagePlaneWidget( handler, picker, 2 )
         
         planeWidgetZ.SetRenderer( ren )
