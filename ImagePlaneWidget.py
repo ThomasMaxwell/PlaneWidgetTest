@@ -56,7 +56,7 @@ class DV3D_GuiInterface:
         self.origin = origin
         self.extent = extent
         self.spacing = spacing
-        image_data = vtk.vtkImageData() 
+        image_data = vtk.vtkImageData() #RESEARCH
         image_data.SetScalarTypeToFloat()
         image_data.SetOrigin( origin[0], origin[1], origin[2] )
         image_data.SetExtent( extent )
@@ -130,7 +130,7 @@ class ImagePlaneWidget:
                         
         # Represent the plane's outline
         #
-        self.PlaneSource  = vtk.vtkPlaneSource()
+        self.PlaneSource  = vtk.vtkPlaneSource() #RESEARCH
         self.PlaneSource.SetXResolution(1)
         self.PlaneSource.SetYResolution(1)
         self.PlaneOutlinePolyData  = vtk.vtkPolyData()
