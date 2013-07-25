@@ -4,6 +4,11 @@ Created on Jun 28, 2013
 @author: tpmaxwell
 '''
 
+import vtk
+import math
+import os.path
+import shapefile
+from vtk import *
 
 import vtk, sys, gc, cdms2, math
 
@@ -12,14 +17,31 @@ VTK_LINEAR_RESLICE  = 1
 VTK_CUBIC_RESLICE   = 2
 
 class DV3D_GuiInterface:
-    def __init__( self, roi, **args ): 
+    def __init__( self, roi, **args ):
         self.roi = roi 
+        self.createRenderWinidow(**args)         
+        self.createContours(**args) 
+        
+    def createRenderWinidow( self, **args ):
+        self.renWin = vtk.vtkRenderWindow()
+        self.ren = vtk.vtkRenderer()
+        self.renWin.AddRenderer(self.ren)
+        self.renWin.SetSize(600, 600)
+        self.iren = vtk.vtkRenderWindowInteractor()
+        self.iren.SetRenderWindow(self.renWin)
+        self.style = vtk.vtkInteractorStyleTrackballCamera()
+        self.iren.SetInteractorStyle(self.style)
+        self.ren.SetBackground(0,0,0.3)
+        
+    def Start(self):
+        self.renWin.Render()
+        self.iren.Start()
     
     def ProcessIPWAction(self, widget, event, **args ):
         action = widget.State
         iAxis = widget.PlaneIndex
         screenPos = widget.GetCurrentScreenPosition()
-
+        
         if event == ImagePlaneWidget.InteractionUpdateEvent:
             
             if action == ImagePlaneWidget.Cursoring:   
@@ -36,8 +58,19 @@ class DV3D_GuiInterface:
                 sliceIndex = widget.GetSliceIndex() 
                 level = self.getLevel( sliceIndex )
                 textDisplay = " Level = %.2f ." % ( level )
-                print textDisplay  
-                
+                widget.GetBounds( self.polygonActor )
+ 
+    def createContours(self,**args):      
+        rgb=args.get( 'rgb', [ 1, 1, 1 ] )
+        linewidth=args.get( 'linewidth', 4 )
+        textFilePath=args.get( 'path', None ) 
+        s=shapeFileReader()
+        s.setColors(rgb)
+        s.setWidth(linewidth)
+        self.polygonActor=s.getLine( self.roi, textFilePath )        
+        self.ren.AddActor(self.polygonActor)
+        self.renWin.Render()
+              
     def getWorldCoords( self, cpos ):
         wpos = [ 0, 0 ]
         for i in range(2):
@@ -183,6 +216,12 @@ class ImagePlaneWidget:
         self.CursorProperty  = 0
         self.CreateDefaultProperties()                                              
         self.TextureVisibility = 1
+
+        self.SetRenderer( actionHandler.ren )
+        prop3 = self.GetPlaneProperty()
+        prop3.SetColor(0, 0, 1)
+        self.SetUserControlledLookupTable(1)
+        self.SetLookupTable( actionHandler.getLUT() )
 
     def __del__(self):
         print " **************************************** Deleting ImagePlaneWidget module, id = %d  **************************************** " % id(self)
@@ -798,7 +837,20 @@ class ImagePlaneWidget:
         self.UpdatePlane()
         self.BuildRepresentation()
         self.Modified()
-
+    
+    
+    #CHECK HERE FOR SETTING SCALE OF COASTLINE    
+    def GetBounds( self, actor ):
+        extent = self.ImageData.GetExtent()
+        spacing = self.ImageData.GetSpacing()
+        o = self.PlaneSource.GetOrigin()
+        p1 = self.PlaneSource.GetPoint1()
+        p2 = self.PlaneSource.GetPoint2()
+        print " O = " + str(o)
+        print " p1 = " + str(p1)
+        print " p2 = " + str(p2)
+        actor.SetPosition( o )
+        
 
 #----------------------------------------------------------------------------
 
@@ -1450,23 +1502,112 @@ class ImagePlaneWidget:
 #        return image_data
 
 
+class shapeFileReader:
+    
+    def __init__(self):
+        self._rgb=[ 0.5, 0.7, 0.1 ]
+        self._linewidth=5
+        self._reader=multiRoSShape()
+        
+        
+    #sets the color of vtk    
+    def setColors(self,rgb):    
+       self._rgb=rgb
+        
+    #sets length of vtk
+    def setWidth(self, linewidth):
+       self._linewidth=linewidth
+    
+    #looks for resolution of the file, connects directory paths and then
+    #creates a VTK model of land    
+    def getLine(self,roi, mrsDefFilePath ): 
+  
+        print(mrsDefFilePath + "MRSSSS")
+        
+        xr=roi[1]-roi[0]
+        yr=roi[3]-roi[2]
+        r=max(xr,yr)
+
+        ##checks roi and determines the resolution of requested file
+        if r<50:
+            resFile="high"
+        if r>=50 and r<=100:
+            resFile="medium"
+        else:
+            resFile="high"
+        print(resFile + "RESFILE")
+        directory=self._reader.openFile(resFile,mrsDefFilePath)
+   
+        #rel_coastFilePath=self._reader.read(resFile, mrsDefFilePath)
+        root_path=os.path.abspath( os.path.dirname( mrsDefFilePath ) )
+        #combines two directories together 
+        full_coastFilePath=os.path.join( root_path, directory)
+        sf = shapefile.Reader(full_coastFilePath)
+        shapes = sf.shapes()
+
+        points = vtk.vtkPoints()
+
+        lines = vtk.vtkCellArray()
+        for x in range(len(shapes)):
+            shape =  shapes[x] 
+            nPts = len( shape.points )
+            idList=vtk.vtkIdList()
+            for iPt in range(nPts):
+                pt = shape.points[iPt]
+                if pt[0]>roi[0] and pt[0]<roi[1]: 
+                    if pt[1]>roi[2] and pt[1]<roi[3]:
+                        ptIndex=points.InsertNextPoint(pt[0], pt[1], 0.0 ) 
+                        idList.InsertNextId(ptIndex) 
+            lines.InsertNextCell(idList)
+        polygon = vtk.vtkPolyData()
+        polygon.SetPoints(points)
+        polygon.SetLines(lines)
+        polygonMapper = vtk.vtkPolyDataMapper()
+        polygonMapper.SetInputConnection(polygon.GetProducerPort())
+        polygonActor = vtk.vtkActor()
+        polygonActor.SetMapper(polygonMapper)
+        
+        property = vtk.vtkProperty()
+        property.SetColor(self._rgb)
+        property.SetLineWidth(self._linewidth)
+        polygonActor.SetProperty(property)
+        return polygonActor
+
+class multiRoSShape:
+    
+     def __init__(self):       
+        self.FileMap = {}
+        
+        
+     def openFile( self, res, textFilePath ):
+         if(not(self.FileMap.has_key(textFilePath))):
+             self.FileMap[textFilePath]=self.read(textFilePath)
+             
+         self.FileMap[textFilePath] = self.read( textFilePath)
+         resDict =  self.FileMap[textFilePath]
+         return resDict[res]
+         
+     def read(self, textFilePath):
+        resDict ={}
+        f=open(textFilePath, 'r')
+        lines=f.readlines()
+        for line in lines:
+            lineE=line.split('=')
+            print str(lineE[1]).strip()
+            resDict[ lineE[0].strip() ]  = lineE[1].strip()  
+        return resDict
+        
+
 
 
 if __name__ == '__main__': 
 
         picker  = vtk.vtkCellPicker()
-        ren = vtk.vtkRenderer()
         picker.SetTolerance(0.005) 
         roi = [ -30, 80, 0, 90, 1000, 100 ]
-        handler = DV3D_GuiInterface( roi )
+        handler = DV3D_GuiInterface( roi, rgb=[5.30, 1.0, 0.20 ], path="/Users/winston/Documents/data/coastline/coastline.txt" )
         planeWidgetZ = ImagePlaneWidget( handler, picker, 2 )
         
-        planeWidgetZ.SetRenderer( ren )
-        prop3 = planeWidgetZ.GetPlaneProperty()
-        prop3.SetColor(0, 0, 1)
-        planeWidgetZ.SetUserControlledLookupTable(1)
-        planeWidgetZ.SetLookupTable( handler.getLUT() )
-
 #        cdmsfile = cdms2.open('/Users/tpmaxwell/data/AConaty/comp-ECMWF/ecmwf.xml')
 #        Relative_humidity = cdmsfile('Relative_humidity')
 #        Relative_humidity = Relative_humidity(isobaric=(1000.0, 10.0),lon=(0.0, 359.0),time=('2011-5-1 0:0:0.0', '2011-5-1 18:0:0.0'),lat=(90.0, -90.0),squeeze=1,)
@@ -1479,6 +1620,15 @@ if __name__ == '__main__':
         planeWidgetZ.SetPlaneOrientationToZAxes()
         planeWidgetZ.PlaceWidget( extent ) 
         
+        handler.Start()
+        
+      
+      
+        #iren.Initialize()
+
+
+        
+        
 #        planeMapper=vtk.vtkPolyDataMapper()
 #        planeMapper.SetInputConnection( planeWidgetZ.GetOutputPort() )
 #                 
@@ -1487,13 +1637,45 @@ if __name__ == '__main__':
 #        ren.AddActor(planeActor)
          
         #Add renderer to renderwindow and render
-        renWin = vtk.vtkRenderWindow()
-        renWin.AddRenderer(ren)
-        renWin.SetSize(600, 600)
-        iren = vtk.vtkRenderWindowInteractor()
-        iren.SetRenderWindow(renWin)
-        style = vtk.vtkInteractorStyleTrackballCamera()
-        iren.SetInteractorStyle(style)
-        ren.SetBackground(0,0,0.3)
-        renWin.Render()
-        iren.Start() 
+        
+        
+
+#        ren1.ResetCamera()
+#
+#        renWin.AddRenderer(ren1)
+ 
+
+#        #Cube
+#        ren = vtk.vtkRenderer()
+#        renWin = vtk.vtkRenderWindow()
+#        renWin.AddRenderer(ren)
+# 
+#
+#        iren = vtk.vtkRenderWindowInteractor()
+#        iren.SetRenderWindow(renWin)
+# 
+#
+#        cube = vtk.vtkCubeSource()
+# 
+#
+#        cubeMapper = vtk.vtkPolyDataMapper()
+#        cubeMapper.SetInput(cube.GetOutput())
+# 
+#
+#        cubeActor = vtk.vtkActor()
+#        cubeActor.SetMapper(cubeMapper)
+# 
+#
+#        ren.AddActor(cubeActor)
+# 
+#
+#        iren.Initialize()
+#        renWin.Render()
+
+        
+        
+        
+        
+        
+        
+        

@@ -5,7 +5,7 @@ import vtk
 import math
 import os.path
 import shapefile
-
+from vtk import *
 
 class shapeFileReader:
     
@@ -117,7 +117,7 @@ polygonActor=s.getLine(roi,textFilePath)
 
 ren1 = vtk.vtkRenderer()
 ren1.AddActor(polygonActor)
-ren1.SetBackground(0.46, 0.77, 0.99)
+ren1.SetBackground(40,60,90)
 
 ren1.ResetCamera()
 
