@@ -62,14 +62,16 @@ class DV3D_GuiInterface:
  
     def createContours(self,**args):      
         rgb=args.get( 'rgb', [ 1, 1, 1 ] )
-        linewidth=args.get( 'linewidth', 4 )
+        linewidth=args.get( 'linewidth', 1 )
         textFilePath=args.get( 'path', None ) 
         s=shapeFileReader()
         s.setColors(rgb)
         s.setWidth(linewidth)
         self.polygonActor=s.getLine( self.roi, textFilePath )        
         self.ren.AddActor(self.polygonActor)
+#        self.polygonActor.SetScale(1.2,1.2,4)
         self.renWin.Render()
+        
               
     def getWorldCoords( self, cpos ):
         wpos = [ 0, 0 ]
@@ -222,6 +224,7 @@ class ImagePlaneWidget:
         prop3.SetColor(0, 0, 1)
         self.SetUserControlledLookupTable(1)
         self.SetLookupTable( actionHandler.getLUT() )
+        self.scaleApplied = False
 
     def __del__(self):
         print " **************************************** Deleting ImagePlaneWidget module, id = %d  **************************************** " % id(self)
@@ -841,15 +844,25 @@ class ImagePlaneWidget:
     
     #CHECK HERE FOR SETTING SCALE OF COASTLINE    
     def GetBounds( self, actor ):
-        extent = self.ImageData.GetExtent()
-        spacing = self.ImageData.GetSpacing()
         o = self.PlaneSource.GetOrigin()
         p1 = self.PlaneSource.GetPoint1()
         p2 = self.PlaneSource.GetPoint2()
-        print " O = " + str(o)
-        print " p1 = " + str(p1)
-        print " p2 = " + str(p2)
-        actor.SetPosition( o )
+#        print " O = " + str(o)
+#        print " p1 = " + str(p1)
+#        print " p2 = " + str(p2)
+        roi = self.ActionHandler.roi
+        origin = [ o[0] - roi[0], o[1] - roi[2], o[2] ]
+        actor.SetPosition( origin )
+        if not self.scaleApplied:       
+            L2 = p1[0] - o[0]
+            W2 = p2[1] - o[1]
+            L1 = roi[1] - roi[0]
+            W1 = roi[3] - roi[2]
+            s1 = actor.GetScale()
+            s2 = [ s1[0]*(L2/L1), s1[1]*(W2/W1)  ]
+            actor.SetScale(s2[0],s2[1],1)
+            self.scaleApplied = True
+
         
 
 #----------------------------------------------------------------------------
@@ -1605,7 +1618,7 @@ if __name__ == '__main__':
         picker  = vtk.vtkCellPicker()
         picker.SetTolerance(0.005) 
         roi = [ -30, 80, 0, 90, 1000, 100 ]
-        handler = DV3D_GuiInterface( roi, rgb=[5.30, 1.0, 0.20 ], path="/Users/winston/Documents/data/coastline/coastline.txt" )
+        handler = DV3D_GuiInterface( roi, rgb=[0, 0, 0 ], linewidth=1, path="/Users/winston/Documents/data/coastline/coastline.txt" )
         planeWidgetZ = ImagePlaneWidget( handler, picker, 2 )
         
 #        cdmsfile = cdms2.open('/Users/tpmaxwell/data/AConaty/comp-ECMWF/ecmwf.xml')
@@ -1620,6 +1633,7 @@ if __name__ == '__main__':
         planeWidgetZ.SetPlaneOrientationToZAxes()
         planeWidgetZ.PlaceWidget( extent ) 
         
+    
         handler.Start()
         
       
